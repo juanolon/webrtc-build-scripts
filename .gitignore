@@ -8,3 +8,5 @@
 
 # Vagrant
 .vagrant
+
+android/jingle_peerconnection_builds/

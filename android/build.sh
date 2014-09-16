@@ -117,18 +117,61 @@ prepare_gyp_defines() {
 	echo "DEFINES=$DEFINES"
 }
 
+function wrbase() {
+    export GYP_DEFINES="build_with_libjingle=1 build_with_chromium=0 host_os=linux libjingle_java=1 enable_tracing=1 "
+    export GYP_GENERATORS="ninja"
+}
+
+function wrarmv7() {
+    echo Setting up build environment for android arm
+	$WEBRTC_ROOT/trunk/build/install-build-deps-android.sh
+	source $WEBRTC_ROOT/trunk/build/android/envsetup.sh
+
+	echo Export the base settings of GYP_DEFINES so we can define how we want to build
+    wrbase
+    export GYP_DEFINES="$GYP_DEFINES OS=android target_arch=armv7 enable_android_opensl=1 armv7=1 arm_neon=1"
+	echo "GYP_DEFINES=$GYP_DEFINES"
+    export GYP_GENERATOR_FLAGS="$GYP_GENERATOR_FLAGS output_dir=out/armeabi-v7a"
+    export GYP_CROSSCOMPILE=1
+	export DEFINES=$GYP_DEFINES
+	echo "DEFINES=$DEFINES"
+}
+
+function wrx86() {
+    echo Setting up build environment for android x86
+	$WEBRTC_ROOT/trunk/build/install-build-deps-android.sh
+	source $WEBRTC_ROOT/trunk/build/android/envsetup.sh
+
+	echo Export the base settings of GYP_DEFINES so we can define how we want to build
+    wrbase
+    export GYP_DEFINES="$GYP_DEFINES OS=android target_arch=ia32 enable_android_opensl=1"
+	echo "GYP_DEFINES=$GYP_DEFINES"
+    export GYP_GENERATOR_FLAGS="$GYP_GENERATOR_FLAGS output_dir=out/x86"
+    export GYP_CROSSCOMPILE=1
+	export DEFINES=$GYP_DEFINES
+	echo "DEFINES=$DEFINES"
+}
+
+function wrlinux() {
+    echo Setting up build environment for desktop
+    wrbase
+    export GYP_DEFINES="$GYP_DEFINES OS=linux target_arch=x64"
+    export GYP_GENERATOR_FLAGS="$GYP_GENERATOR_FLAGS output_dir=out/x64"
+}
+
 # Clean up and generate the build scripts
 prepare_build() {
 	WORKING_DIR=`pwd`
+	OUT_DIR=$1
 
     echo Change directory into webrtc trunk
     cd "$WEBRTC_ROOT/trunk"
 
     echo cleaning old build
-    rm -rf out
-    mkdir out
-    mkdir out/Release
-    mkdir out/Debug
+    rm -rf out/$OUT_DIR
+    mkdir out/$OUT_DIR
+    mkdir out/$OUT_DIR/Release
+    mkdir out/$OUT_DIR/Debug
 
     echo gclient runhooks
     gclient runhooks
@@ -140,17 +183,18 @@ prepare_build() {
 execute_build() {
 	WORKING_DIR=`pwd`
 	cd "$WEBRTC_ROOT/trunk"
+	ARCHITECTURE=$1
 
 	PEERCONNECTION_BUILD="$WEBRTC_ROOT/libjingle_peerconnection_builds"
 	create_directory_if_not_found "$PEERCONNECTION_BUILD"
-	DEBUG_DIR="$PEERCONNECTION_BUILD/Debug"
+	DEBUG_DIR="$PEERCONNECTION_BUILD/$ARCHITECTURE/Release"
 	create_directory_if_not_found "$DEBUG_DIR"
-	ARCHITECTURE="armeabi-v7a"
+	# ARCHITECTURE="armeabi-v7a"
 
 	DIRECTORY="$WEBRTC_ROOT/trunk/talk/examples/android/libs/$ARCHITECTURE"
 
 	echo Build AppRTCDemo in Release mode
-	ninja -C out/Release/ AppRTCDemo
+	ninja -C out/$ARCHITECTURE/Release/ AppRTCDemo
 	
 	RELEASE_DIR="$PEERCONNECTION_BUILD/Release"
 	create_directory_if_not_found "$RELEASE_DIR"
@@ -170,18 +214,19 @@ execute_build() {
 # Builds the apprtc demo in debug
 execute_debug_build() {
 	WORKING_DIR=`pwd`
+	ARCHITECTURE=$1
 
 	echo Change directory into webrtc trunk
 	cd "$WEBRTC_ROOT/trunk"
 
 	echo Build AppRTCDemo in Debug mode
-	ninja -C out/Debug/ AppRTCDemo
+	ninja -C out/$ARCHITECTURE/Debug/ AppRTCDemo
 
 	PEERCONNECTION_BUILD="$WEBRTC_ROOT/libjingle_peerconnection_builds"
 	create_directory_if_not_found "$PEERCONNECTION_BUILD"
 	DEBUG_DIR="$PEERCONNECTION_BUILD/Debug"
 	create_directory_if_not_found "$DEBUG_DIR"
-	ARCHITECTURE="armeabi-v7a"
+	# ARCHITECTURE="armeabi-v7a"
 
 	DIRECTORY="$WEBRTC_ROOT/trunk/talk/examples/android/libs/$ARCHITECTURE"
 
@@ -201,20 +246,48 @@ get_webrtc_revision() {
     svn info "$WEBRTC_ROOT/trunk" | awk '{ if ($1 ~ /Revision/) { print $2 } }'
 }
 
+# Gets the webrtc revision
+deploy() {
+    echo "coping result to /vagrant"
+    cp -r $WEBRTC_ROOT/libjingle_peerconnection_builds /vagrant/libjingle_peerconnection_builds
+}
+
 # Updates webrtc and builds apprtc
 build_apprtc() {
     pull_depot_tools &&
-    pull_webrtc $1 && 
-    prepare_gyp_defines &&
-    prepare_build && 
-    execute_build
+    pull_webrtc $1 &&
+    wrarmv7 &&
+    prepare_build "armeabi-v7a" &&
+    execute_build "armeabi-v7a"
+    deploy
+}
+
+# Updates webrtc and builds apprtc
+build_apprtc_android_x86() {
+    pull_depot_tools &&
+    pull_webrtc $1 &&
+    wrx86 &&
+    prepare_build "x86" &&
+    execute_build "x86"
+    deploy
+}
+
+# Updates webrtc and builds apprtc for x86
+build_x64_apprtc() {
+    pull_depot_tools &&
+    pull_webrtc $1 &&
+    wrlinux &&
+    prepare_build "x64" &&
+    execute_build "x64"
+    deploy
 }
 
 # Updates webrtc and builds apprtc in debug
 build_debug_apprtc() {
     pull_depot_tools &&
-    pull_webrtc $1 && 
+    pull_webrtc $1 &&
     prepare_gyp_defines &&
-    prepare_build && 
-    execute_debug_build
+    prepare_build "armeabi-v7a" &&
+    execute_debug_build "armeabi-v7a"
+    deploy
 }
